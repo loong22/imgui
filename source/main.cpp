@@ -11,7 +11,6 @@
 #include <sys/stat.h>  // 用于获取文件信息
 #include <vector>   // 用于缓冲区
 
-
 // Data
 static ID3D11Device* g_pd3dDevice = nullptr;
 static ID3D11DeviceContext* g_pd3dDeviceContext = nullptr;

@@ -28,11 +28,17 @@ file(GLOB SOURCES
 link_directories(${CMAKE_SOURCE_DIR}/packages/win32_directx11/lib/x64)
 link_directories(${CMAKE_SOURCE_DIR}/packages/freetype-2.13.3/lib)
 
-# 创建可执行文件
-add_executable(Imgui ${SOURCES} ${HEADERS})
+# 创建可执行文件 - 将普通可执行文件改为WIN32应用程序
+add_executable(Imgui WIN32 ${SOURCES} ${HEADERS})
 
-# 链接库
-target_link_libraries(Imgui PRIVATE d3d11.lib d3dcompiler.lib dxgi.lib freetype.lib)
+# 根据编译器类型设置链接库
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # GCC 编译器
+    target_link_libraries(Imgui PRIVATE libd3d11.a libd3dcompiler.a libdxgi.a freetype dwmapi)
+else()
+    # MSVC 编译器或其他
+    target_link_libraries(Imgui PRIVATE d3d11.lib d3dcompiler.lib dxgi.lib freetype.lib dwmapi.lib)
+endif()
 
 # 组织文件到 VS 解决方案中的实际目录结构
 source_group(TREE ${CMAKE_SOURCE_DIR} FILES ${SOURCES} ${HEADERS})
@@ -43,3 +49,12 @@ set_target_properties(Imgui PROPERTIES
     DEBUG_POSTFIX "_Debug"         # Debug 模式下添加后缀
     RELEASE_POSTFIX ""             # Release 模式下无后缀
 )
+
+# 根据编译器类型设置链接库
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    # 添加构建后命令，复制 freetype.dll 到构建目录
+    add_custom_command(TARGET Imgui POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/packages/freetype-2.13.3/lib/libfreetype.dll"
+        "$<TARGET_FILE_DIR:Imgui>")
+endif()
