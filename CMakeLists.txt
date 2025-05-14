@@ -1,11 +1,17 @@
 cmake_minimum_required(VERSION 3.10)
 project(Imgui)
 
-# 提供一个选项让用户选择配置类型
-set(CMAKE_CONFIGURATION_TYPES "Debug;Release" CACHE STRING "Available configuration types" FORCE)
-
 # 设置 Visual Studio 默认启动项目
 set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Imgui)
+
+# 设置默认构建类型为 Release
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
+endif()
+
+# 设置编译优化选项
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
 
 # 设置统一输出路径
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -13,15 +19,20 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_BINARY_DIR}/bin)
 
 # 头文件路径
+include_directories(${CMAKE_SOURCE_DIR}/include)
 include_directories(${CMAKE_SOURCE_DIR}/packages/win32_directx11/include)
 include_directories(${CMAKE_SOURCE_DIR}/packages/misc/freetype)
 include_directories(${CMAKE_SOURCE_DIR}/packages/freetype-2.13.3/include)
+include_directories(${CMAKE_SOURCE_DIR}/packages/implot/include)  # 添加ImPlot头文件路径
+include_directories(${CMAKE_SOURCE_DIR}/packages/implot3d/include)  # 添加ImPlot3d头文件路径
 
 # 搜索源文件
 file(GLOB SOURCES
     "${CMAKE_SOURCE_DIR}/source/*.cpp"
     "${CMAKE_SOURCE_DIR}/packages/win32_directx11/source/*.cpp"
     "${CMAKE_SOURCE_DIR}/packages/misc/freetype/*.cpp"
+    "${CMAKE_SOURCE_DIR}/packages/implot/source/*.cpp"  # 添加ImPlot源文件
+    "${CMAKE_SOURCE_DIR}/packages/implot3d/source/*.cpp"  # 添加ImPlot3d源文件
 )
 
 # 库文件路径
