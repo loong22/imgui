@@ -10,13 +10,6 @@ if not exist build (
 REM 进入 build 目录
 cd build
 
-REM 清理之前的缓存（如果存在生成器冲突）
-if exist CMakeCache.txt (
-    echo 清理旧的 CMake 缓存...
-    del CMakeCache.txt
-    rmdir /s /q CMakeFiles 2>nul
-)
-
 REM 运行 CMake 配置
 cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release .. 2>&1
 
