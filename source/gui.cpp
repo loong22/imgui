@@ -54,6 +54,7 @@ void ShowNavigationBar() {
 }
 
 // 文件菜单实现
+// 修改文件菜单实现
 void ShowFileMenu() {
     if (ImGui::MenuItem(u8"新建", "Ctrl+N")) {
         g_AppState.currentFilePath.clear();
@@ -61,20 +62,29 @@ void ShowFileMenu() {
     }
 
     if (ImGui::MenuItem(u8"打开", "Ctrl+O")) {
-        OPENFILENAMEA ofn;
-        char szFile[260] = { 0 };
+        OPENFILENAMEW ofn;
+        wchar_t szFile[260] = { 0 };
 
         ZeroMemory(&ofn, sizeof(ofn));
         ofn.lStructSize = sizeof(ofn);
         ofn.hwndOwner = GetActiveWindow();
         ofn.lpstrFile = szFile;
-        ofn.nMaxFile = sizeof(szFile);
-        ofn.lpstrFilter = "文本文件\0*.txt\0所有文件\0*.*\0";
+        ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
+        ofn.lpstrFilter = L"文本文件(*.txt)\0*.txt\0所有文件\0*.*\0";
         ofn.nFilterIndex = 1;
         ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
 
-        if (GetOpenFileNameA(&ofn) == TRUE) {
-            g_AppState.currentFilePath = ofn.lpstrFile;
+        if (GetOpenFileNameW(&ofn) == TRUE) {
+            // 转换Unicode路径为UTF-8
+            int size_needed = WideCharToMultiByte(CP_UTF8, 0, ofn.lpstrFile, -1, NULL, 0, NULL, NULL);
+            std::string path(size_needed, 0);
+            WideCharToMultiByte(CP_UTF8, 0, ofn.lpstrFile, -1, &path[0], size_needed, NULL, NULL);
+            // 移除末尾的null字符
+            if (!path.empty() && path.back() == 0) {
+                path.pop_back();
+            }
+            
+            g_AppState.currentFilePath = path;
             LoadFile(g_AppState.currentFilePath, g_AppState.fileContent);
         }
     }
@@ -83,21 +93,30 @@ void ShowFileMenu() {
         if (!g_AppState.currentFilePath.empty()) {
             SaveFile(g_AppState.currentFilePath, g_AppState.fileContent);
         } else {
-            OPENFILENAMEA ofn;
-            char szFile[260] = { 0 };
+            OPENFILENAMEW ofn;
+            wchar_t szFile[260] = { 0 };
 
             ZeroMemory(&ofn, sizeof(ofn));
             ofn.lStructSize = sizeof(ofn);
             ofn.hwndOwner = GetActiveWindow();
             ofn.lpstrFile = szFile;
-            ofn.nMaxFile = sizeof(szFile);
-            ofn.lpstrFilter = "文本文件\0*.txt\0所有文件\0*.*\0";
+            ofn.nMaxFile = sizeof(szFile) / sizeof(wchar_t);
+            ofn.lpstrFilter = L"文本文件(*.txt)\0*.txt\0所有文件\0*.*\0";
             ofn.nFilterIndex = 1;
             ofn.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
-            ofn.lpstrDefExt = "txt";
+            ofn.lpstrDefExt = L"txt";
 
-            if (GetSaveFileNameA(&ofn) == TRUE) {
-                g_AppState.currentFilePath = ofn.lpstrFile;
+            if (GetSaveFileNameW(&ofn) == TRUE) {
+                // 转换Unicode路径为UTF-8
+                int size_needed = WideCharToMultiByte(CP_UTF8, 0, ofn.lpstrFile, -1, NULL, 0, NULL, NULL);
+                std::string path(size_needed, 0);
+                WideCharToMultiByte(CP_UTF8, 0, ofn.lpstrFile, -1, &path[0], size_needed, NULL, NULL);
+                // 移除末尾的null字符
+                if (!path.empty() && path.back() == 0) {
+                    path.pop_back();
+                }
+                
+                g_AppState.currentFilePath = path;
                 SaveFile(g_AppState.currentFilePath, g_AppState.fileContent);
             }
         }

@@ -66,10 +66,40 @@ int main(int, char**)
     ReleaseDC(NULL, hdc);
     float dpi_scale = dpi / 96.0f; // 96 DPI是标准DPI
     
+    // 基准设计分辨率 - 用于计算缩放比例
+    float base_width = 1920.0f;
+    float base_height = 1080.0f;
+    
+    // 修改1: 计算窗口位置，使其居中显示
+    int window_width = 1920;
+    int window_height = 1080;
+    int window_x = (screen_width - window_width) / 2;
+    int window_y = (screen_height - window_height) / 2;
+    
     // Create application window
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ImGui Example", nullptr };
     ::RegisterClassExW(&wc);
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", WS_OVERLAPPEDWINDOW, 100, 100, 1920, 1080, nullptr, nullptr, wc.hInstance, nullptr);
+    
+    // 修改2: 使用计算出的位置和大小创建窗口
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", 
+                              WS_OVERLAPPEDWINDOW, 
+                              window_x, window_y, 
+                              window_width, window_height, 
+                              nullptr, nullptr, wc.hInstance, nullptr);
+
+    // 修改3: 调整窗口大小以确保客户区域精确为1920x1080
+    RECT window_rect, client_rect;
+    GetWindowRect(hwnd, &window_rect);
+    GetClientRect(hwnd, &client_rect);
+    
+    int border_width = (window_rect.right - window_rect.left) - client_rect.right;
+    int border_height = (window_rect.bottom - window_rect.top) - client_rect.bottom;
+    
+    // 调整窗口大小，加上边框宽度确保客户区是1920x1080
+    ::SetWindowPos(hwnd, NULL, window_x, window_y, 
+                  window_width + border_width, 
+                  window_height + border_height, 
+                  SWP_NOZORDER);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(hwnd))
@@ -87,6 +117,10 @@ int main(int, char**)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
+    
+    // 修改4: 禁用ini文件，每次都使用代码中的默认值
+    io.IniFilename = NULL;
+    
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
@@ -96,6 +130,9 @@ int main(int, char**)
     if (font_scale > 1.5f) font_scale = 1.5f;
     io.FontGlobalScale = font_scale;
 
+    // 保存原始样式，用于重置
+    ImGuiStyle style_original = ImGui::GetStyle();
+    
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
     
@@ -108,6 +145,9 @@ int main(int, char**)
     style.ItemSpacing = ImVec2(6.0f * font_scale, 4.0f * font_scale);
     style.ItemInnerSpacing = ImVec2(4.0f * font_scale, 4.0f * font_scale);
     style.FramePadding = ImVec2(4.0f * font_scale, 2.0f * font_scale);
+    
+    // 保存应用了DPI缩放的基础样式
+    style_original = ImGui::GetStyle();
 
     // Setup Platform/Renderer backends
     ImGui_ImplWin32_Init(hwnd);
@@ -115,7 +155,7 @@ int main(int, char**)
 
     // Load Fonts - 根据DPI调整字体大小
     // 改进：使用更合理的基础字体大小，缩放系数改为font_scale
-    float base_font_size = 14.0f;
+    float base_font_size = 15.0f;
     float font_size = base_font_size * font_scale;
     io.Fonts->AddFontFromFileTTF("C:\\Windows\\Fonts\\simsun.ttc", font_size, nullptr, io.Fonts->GetGlyphRangesChineseFull());
 
@@ -127,6 +167,15 @@ int main(int, char**)
     
     // 初始化ImPlot
     InitializeImPlot();
+    
+    // 跟踪窗口是否已最大化
+    bool was_maximized = false;
+    float ui_scale = 1.0f;  // UI缩放比例，根据窗口大小动态调整
+    
+    // 添加窗口状态变量
+    bool window_state_changed = false;  // 窗口状态是否发生变化
+    bool plot_window_opened = false;    // 标记图表窗口是否刚打开
+    bool plot3d_window_opened = false;  // 标记3D图表窗口是否刚打开
 
     // Main loop
     bool done = false;
@@ -159,12 +208,54 @@ int main(int, char**)
             g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
             g_ResizeWidth = g_ResizeHeight = 0;
             CreateRenderTarget();
+            
+            // 窗口尺寸变化，设置窗口状态变化标志
+            window_state_changed = true;
         }
 
         // Start the Dear ImGui frame
         ImGui_ImplDX11_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
+        
+        // 检测窗口是否最大化，并计算合适的UI缩放比例
+        bool is_maximized = IsZoomed(hwnd);
+        float display_width = ImGui::GetIO().DisplaySize.x;
+        float display_height = ImGui::GetIO().DisplaySize.y;
+        
+        // 当窗口最大化状态变化或窗口大小改变时，重新计算UI缩放比例
+        if (is_maximized != was_maximized || window_state_changed) {
+            // 计算当前窗口尺寸与基准设计尺寸的比例
+            float width_ratio = display_width / base_width;
+            float height_ratio = display_height / base_height;
+            
+            // 使用较小的比例作为UI缩放因子，以保持所有内容可见
+            ui_scale = width_ratio < height_ratio ? width_ratio : height_ratio;
+            
+            // 限制缩放范围，避免太大或太小
+            if (ui_scale < 0.7f) ui_scale = 0.7f;
+            if (ui_scale > 1.5f) ui_scale = 1.5f;
+            
+            // 重要修复：先重置样式，再应用新缩放，避免缩放累积效应
+            ImGui::GetStyle() = style_original;  // 恢复原始样式
+            ImGui::GetStyle().ScaleAllSizes(ui_scale);  // 只应用一次缩放
+            
+            was_maximized = is_maximized;
+            window_state_changed = false;  // 重置窗口状态变化标志
+        }
+        
+        // 检测各窗口打开状态
+        if (g_AppState.showPlotWindow && !plot_window_opened) {
+            plot_window_opened = true;  // 标记窗口刚刚打开
+        } else if (!g_AppState.showPlotWindow) {
+            plot_window_opened = false;  // 窗口关闭后重置标志
+        }
+        
+        if (g_AppState.show3DPlotWindow && !plot3d_window_opened) {
+            plot3d_window_opened = true;  // 标记窗口刚刚打开
+        } else if (!g_AppState.show3DPlotWindow) {
+            plot3d_window_opened = false;  // 窗口关闭后重置标志
+        }
 
         // 显示导航栏
         ShowNavigationBar();
@@ -191,26 +282,28 @@ int main(int, char**)
 
         // 主菜单窗口 - 改进自适应布局
         {
-            // 获取当前显示器大小
-            float display_width = ImGui::GetIO().DisplaySize.x;
-            float display_height = ImGui::GetIO().DisplaySize.y;
-            
             // 获取菜单栏高度
             float menu_bar_height = ImGui::GetFrameHeight();
             
             // 改进：使用比例布局而非固定大小
             // 左侧面板占总宽度的20%，但最小不小于240像素，最大不超过350像素
             float window_width = display_width * 0.20f;
-            window_width = (window_width < 240.0f) ? 240.0f : window_width;
-            window_width = (window_width > 350.0f) ? 350.0f : window_width;
+            
+            // 根据当前UI缩放调整最小和最大宽度限制
+            float min_width = 240.0f * ui_scale;
+            float max_width = 350.0f * ui_scale;
+            
+            window_width = (window_width < min_width) ? min_width : window_width;
+            window_width = (window_width > max_width) ? max_width : window_width;
             float window_height = display_height - menu_bar_height;
             
             // 设置窗口位置和大小 - 位置在菜单栏下方
             ImGui::SetNextWindowPos(ImVec2(0, menu_bar_height), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(window_width, window_height), ImGuiCond_FirstUseEver);
+            ImGui::SetNextWindowSize(ImVec2(window_width, window_height), ImGuiCond_Always);
             
             // 设置窗口标志：不可移动、不可调整大小、不可折叠、无标题栏
             ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove |
+                                          ImGuiWindowFlags_NoResize |
                                           ImGuiWindowFlags_NoCollapse |
                                           ImGuiWindowFlags_NoTitleBar;
 
@@ -225,7 +318,7 @@ int main(int, char**)
             
             ImGui::Text(u8"这是一些有用的文本信息。");
             ImGui::TextWrapped(u8"当前显示分辨率: %.0f x %.0f", display_width, display_height);
-            ImGui::TextWrapped(u8"缩放比例: %.2f", font_scale);
+            ImGui::TextWrapped(u8"缩放比例: %.2f (UI: %.2f)", font_scale, ui_scale);
             
             ImGui::Separator();
             
@@ -242,24 +335,21 @@ int main(int, char**)
                 g_AppState.show3DPlotWindow = true;
             
             ImGui::Separator();
-            
-            // 添加一些测试控件
-            ImGui::Text(u8"测试控件:");
-            static float test_float = 0.5f;
-            ImGui::SliderFloat(u8"测试滑块", &test_float, 0.0f, 1.0f);
-            
-            static int test_int = 50;
-            ImGui::SliderInt(u8"测试整数", &test_int, 0, 100);
-            
-            static bool test_bool = true;
-            ImGui::Checkbox(u8"测试复选框", &test_bool);
-            
-            ImGui::Separator();
-            
+
             // 显示窗口信息
             ImGui::TextWrapped(u8"窗口信息:");
-            ImGui::TextWrapped(u8"窗口大小: %.1f x %.1f", window_width, window_height);
+             // 重新获取当前窗口的实际尺寸，而不是使用计算值
+            ImVec2 window_current_size = ImGui::GetWindowSize();
+            ImVec2 window_content_size = ImGui::GetContentRegionAvail();
+            
+            // 显示实时更新的窗口信息
+            ImGui::TextWrapped(u8"窗口大小: %.1f x %.1f", window_current_size.x, window_current_size.y);
+            ImGui::TextWrapped(u8"内容区域: %.1f x %.1f", window_content_size.x, window_content_size.y);
             ImGui::TextWrapped(u8"菜单栏高度: %.1f", menu_bar_height);
+            ImGui::TextWrapped(u8"窗口最大化: %s", is_maximized ? "是" : "否");
+            
+            // 显示实际屏幕分辨率
+            ImGui::TextWrapped(u8"屏幕分辨率: %.1f x %.1f", display_width, display_height);
             
             ImGui::End();
         }
@@ -267,16 +357,19 @@ int main(int, char**)
         // 日志窗口 - 改进自适应布局
         if (show_log_window)
         {
-            // 获取当前显示器大小
-            float display_width = ImGui::GetIO().DisplaySize.x;
-            float display_height = ImGui::GetIO().DisplaySize.y;
+            // 获取菜单栏高度
             float menu_bar_height = ImGui::GetFrameHeight();
             
             // 改进：使用比例布局，确保在不同分辨率下都有合适的大小
             // 计算左侧面板宽度（与上面主菜单窗口一致）
             float left_panel_width = display_width * 0.20f;
-            left_panel_width = (left_panel_width < 240.0f) ? 240.0f : left_panel_width;
-            left_panel_width = (left_panel_width > 350.0f) ? 350.0f : left_panel_width;
+            
+            // 根据当前UI缩放调整最小和最大宽度限制
+            float min_width = 240.0f * ui_scale;
+            float max_width = 350.0f * ui_scale;
+            
+            left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
+            left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
             // 日志窗口计算
             float log_pos_x = left_panel_width;
@@ -285,7 +378,8 @@ int main(int, char**)
             float log_height = display_height - log_pos_y;
             
             // 调整最小高度，确保日志窗口有足够的显示空间
-            if (log_height < 180.0f) log_height = 180.0f;
+            float min_log_height = 180.0f * ui_scale;
+            if (log_height < min_log_height) log_height = min_log_height;
             
             // 确保日志窗口不会超出屏幕边界
             if (log_pos_y + log_height > display_height) {
@@ -311,36 +405,49 @@ int main(int, char**)
 
         // 如果图表窗口打开，也需要适应分辨率
         if (g_AppState.showPlotWindow) {
-            float display_width = ImGui::GetIO().DisplaySize.x;
-            float display_height = ImGui::GetIO().DisplaySize.y;
             float menu_bar_height = ImGui::GetFrameHeight();
             
             // 改进：图表窗口位置和大小计算
             float left_panel_width = display_width * 0.20f;
-            left_panel_width = (left_panel_width < 240.0f) ? 240.0f : left_panel_width;
-            left_panel_width = (left_panel_width > 350.0f) ? 350.0f : left_panel_width;
+            
+            // 根据当前UI缩放调整最小和最大宽度限制
+            float min_width = 240.0f * ui_scale;
+            float max_width = 350.0f * ui_scale;
+            
+            left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
+            left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
             float plot_pos_x = left_panel_width;
             float plot_pos_y = menu_bar_height;
             float plot_width = display_width - left_panel_width;
             float plot_height = display_height * 0.6f - menu_bar_height;
             
-            ImGui::SetNextWindowPos(ImVec2(plot_pos_x, plot_pos_y), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(plot_width, plot_height), ImGuiCond_FirstUseEver);
+            // 修复：窗口刚打开或窗口状态变化时，总是使用当前计算的位置和大小
+            ImGuiCond position_cond = plot_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            ImGuiCond size_cond = plot_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            
+            ImGui::SetNextWindowPos(ImVec2(plot_pos_x, plot_pos_y), position_cond);
+            ImGui::SetNextWindowSize(ImVec2(plot_width, plot_height), size_cond);
+            
+            // 窗口已打开，重置标志
+            plot_window_opened = false;
             
             ShowPlotWindow(&g_AppState.showPlotWindow);
         }
 
         // 如果3D图表窗口打开，也需要适应分辨率
         if (g_AppState.show3DPlotWindow) {
-            float display_width = ImGui::GetIO().DisplaySize.x;
-            float display_height = ImGui::GetIO().DisplaySize.y;
             float menu_bar_height = ImGui::GetFrameHeight();
             
             // 改进：3D图表窗口计算方式
             float left_panel_width = display_width * 0.20f;
-            left_panel_width = (left_panel_width < 240.0f) ? 240.0f : left_panel_width;
-            left_panel_width = (left_panel_width > 350.0f) ? 350.0f : left_panel_width;
+            
+            // 根据当前UI缩放调整最小和最大宽度限制
+            float min_width = 240.0f * ui_scale;
+            float max_width = 350.0f * ui_scale;
+            
+            left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
+            left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
             // 初始窗口位置调整，比例计算
             float plot3d_pos_x = (display_width - left_panel_width) * 0.1f + left_panel_width;
@@ -348,8 +455,15 @@ int main(int, char**)
             float plot3d_width = display_width * 0.7f;
             float plot3d_height = display_height * 0.7f;
             
-            ImGui::SetNextWindowPos(ImVec2(plot3d_pos_x, plot3d_pos_y), ImGuiCond_FirstUseEver);
-            ImGui::SetNextWindowSize(ImVec2(plot3d_width, plot3d_height), ImGuiCond_FirstUseEver);
+            // 修复：窗口刚打开或窗口状态变化时，总是使用当前计算的位置和大小
+            ImGuiCond position_cond = plot3d_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            ImGuiCond size_cond = plot3d_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            
+            ImGui::SetNextWindowPos(ImVec2(plot3d_pos_x, plot3d_pos_y), position_cond);
+            ImGui::SetNextWindowSize(ImVec2(plot3d_width, plot3d_height), size_cond);
+            
+            // 窗口已打开，重置标志
+            plot3d_window_opened = false;
             
             DemoMeshPlots(&g_AppState.show3DPlotWindow);
         }
