@@ -14,6 +14,6 @@ REM 运行 CMake 配置
 cmake -G "Ninja" -DCMAKE_BUILD_TYPE=Release .. 2>&1
 
 REM 执行构建操作
-cmake --build . --config Release --target Imgui -j 8 2>&1
+cmake --build . --config Release -j 2>&1
 
 echo 生成完成

@@ -22,23 +22,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 *********************************************************************/
 
-#ifndef APP_H
-#define APP_H
+#ifndef IMGUI_APP_H
+#define IMGUI_APP_H
 
 #include <string>
 #include <ctime>
+#include <fstream>
 #include <d3d11.h>
 #include <windows.h>
 
 // 程序状态数据结构
 struct AppState {
-    bool showAboutWindow = false;      // 是否显示"关于"窗口
-    bool showPrefsWindow = false;      // 是否显示"首选项"窗口
-    bool showThemeWindow = false;      // 是否显示"颜色主题"窗口
-    bool showHelpWindow = false;       // 是否显示"帮助"窗口
-    bool showUpdateWindow = false;     // 是否显示"检查更新"窗口
-    bool showPlotWindow = false;       // 是否显示"图表"窗口
-    bool show3DPlotWindow = false;     // 是否显示"3D图表"窗口
+    // 窗口状态
+    bool showAboutWindow = false;
+    bool showPrefsWindow = false;
+    bool showThemeWindow = false;
+    bool showHelpWindow = false;
+    bool showUpdateWindow = false;
+    bool showPlotWindow = false;
+    bool show3DPlotWindow = false;
+    bool wantToQuit = false;
 
     // 主题设置
     bool isDarkTheme = true;
@@ -47,21 +50,18 @@ struct AppState {
     std::string currentFilePath;
     std::string fileContent;
 
-    // 退出应用程序
-    bool wantToQuit = false;
-
     // 日志文件数据
-    std::string logFilePath;           // 日志文件路径
-    std::string logContent;            // 缓存的日志内容
-    std::streampos lastReadPosition;   // 上次读取位置
-    bool autoRefreshLog = true;        // 是否自动刷新日志
-    float refreshInterval = 1.0f;      // 刷新间隔(秒)
-    float lastRefreshTime = 0.0f;      // 上次刷新时间
-    std::time_t logFileLastModified = 0; // 日志文件的最后修改时间
-    bool logContentCleared = false;    // 日志内容是否被清空
-    bool showLineNumbers = true;       // 是否显示行号
-    bool wrapLogLines = true;          // 是否自动换行
-    float logLineWidth = 0.0f;         // 日志行宽（0表示自适应窗口宽度）
+    std::string logFilePath;
+    std::string logContent;
+    std::streampos lastReadPosition = 0;
+    bool autoRefreshLog = true;
+    float refreshInterval = 1.0f;
+    float lastRefreshTime = 0.0f;
+    std::time_t logFileLastModified = 0;
+    bool logContentCleared = false;
+    bool showLineNumbers = true;
+    bool wrapLogLines = true;
+    float logLineWidth = 0.0f;
 };
 
 extern AppState g_AppState;
@@ -74,25 +74,49 @@ extern bool g_SwapChainOccluded;
 extern UINT g_ResizeWidth, g_ResizeHeight;
 extern ID3D11RenderTargetView* g_mainRenderTargetView;
 
-// 文件操作函数
+// === 应用程序核心功能 ===
+// 文件操作
 bool SaveFile(const std::string& filePath, const std::string& content);
 bool LoadFile(const std::string& filePath, std::string& content);
+std::time_t GetFileLastModifiedTime(const std::string& filePath);
 
-// 窗口约束函数
+// 窗口管理
 void ConstrainWindowsToMainViewport();
 
-// Direct3D 初始化函数
+// Direct3D 初始化
 bool CreateDeviceD3D(HWND hWnd);
 void CleanupDeviceD3D();
 void CreateRenderTarget();
 void CleanupRenderTarget();
 LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
-// ImPlot相关函数
+// ImPlot相关
 void InitializeImPlot();
 void CleanupImPlot();
 
-// 获取文件的最后修改时间
-std::time_t GetFileLastModifiedTime(const std::string& filePath);
+// === GUI界面功能 ===
+// 导航栏和菜单
+void ShowNavigationBar();
+void ShowFileMenu();
+void ShowSettingsMenu();
+void ShowHelpMenu();
 
-#endif // APP_H
+// 各种窗口
+void ShowAboutWindow(bool* p_open);
+void ShowPreferencesWindow(bool* p_open);
+void ShowThemeWindow(bool* p_open);
+void ShowHelpWindow(bool* p_open);
+void ShowUpdateCheckWindow(bool* p_open);
+
+// === 日志功能 ===
+void ShowLogWindow(bool* p_open);
+bool LoadLogFileIncremental(const std::string& filePath, std::string& content, std::streampos& lastPos);
+void OpenLogFile();
+void ClearLogContent();
+void RenderLogContent(const std::string& content, bool showLineNumbers, bool wrapText, float wrapWidth);
+
+// === 图表功能 ===
+void ShowPlotWindow(bool* p_open);
+void DemoMeshPlots(bool* p_open);
+
+#endif // IMGUI_APP_H

@@ -22,7 +22,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 *********************************************************************/
 
+#include "../include/imgui_app.h"
 #include "imgui.h"
+#include "imgui_internal.h"  // 添加这个头文件以使用ImGuiWindow和FindWindowByName
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include "implot.h"
@@ -34,12 +36,6 @@ SOFTWARE.
 #include <sstream>
 #include <ctime>
 #include <vector>
-
-// 引入头文件
-#include "../include/app.h"
-#include "../include/gui.h"
-#include "../include/log.h"
-#include "../include/plot.h"
 
 // 初始化全局变量
 AppState g_AppState;
@@ -81,7 +77,7 @@ int main(int, char**)
     ::RegisterClassExW(&wc);
     
     // 修改2: 使用计算出的位置和大小创建窗口
-    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"Dear ImGui DirectX11 Example", 
+    HWND hwnd = ::CreateWindowW(wc.lpszClassName, L"SU2GUI", 
                               WS_OVERLAPPEDWINDOW, 
                               window_x, window_y, 
                               window_width, window_height, 
@@ -118,8 +114,8 @@ int main(int, char**)
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
     
-    // 修改4: 禁用ini文件，每次都使用代码中的默认值
-    io.IniFilename = NULL;
+    // 启用INI文件保存窗口设置
+    // io.IniFilename = NULL;  // 注释掉这行以启用INI文件
     
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -173,12 +169,22 @@ int main(int, char**)
     float ui_scale = 1.0f;  // UI缩放比例，根据窗口大小动态调整
     
     // 添加窗口状态变量
-    bool window_state_changed = false;  // 窗口状态是否发生变化
     bool plot_window_opened = false;    // 标记图表窗口是否刚打开
     bool plot3d_window_opened = false;  // 标记3D图表窗口是否刚打开
+    
+    // 添加缺失的变量声明
+    ImVec2 last_main_window_pos(0, 0);
+    ImVec2 last_main_window_size(0, 0);
 
     // Main loop
     bool done = false;
+    
+    // 添加用于追踪分辨率变化的变量
+    static float last_display_width = 0.0f;
+    static float last_display_height = 0.0f;
+    static float last_resolution_scale = 1.0f;
+    static ImGuiStyle original_style = ImGui::GetStyle(); // 保存原始样式
+    
     while (!done && !g_AppState.wantToQuit)
     {
         // Poll and handle messages
@@ -208,9 +214,6 @@ int main(int, char**)
             g_pSwapChain->ResizeBuffers(0, g_ResizeWidth, g_ResizeHeight, DXGI_FORMAT_UNKNOWN, 0);
             g_ResizeWidth = g_ResizeHeight = 0;
             CreateRenderTarget();
-            
-            // 窗口尺寸变化，设置窗口状态变化标志
-            window_state_changed = true;
         }
 
         // Start the Dear ImGui frame
@@ -223,38 +226,65 @@ int main(int, char**)
         float display_width = ImGui::GetIO().DisplaySize.x;
         float display_height = ImGui::GetIO().DisplaySize.y;
         
-        // 当窗口最大化状态变化或窗口大小改变时，重新计算UI缩放比例
-        if (is_maximized != was_maximized || window_state_changed) {
-            // 计算当前窗口尺寸与基准设计尺寸的比例
-            float width_ratio = display_width / base_width;
-            float height_ratio = display_height / base_height;
-            
-            // 使用较小的比例作为UI缩放因子，以保持所有内容可见
-            ui_scale = width_ratio < height_ratio ? width_ratio : height_ratio;
-            
-            // 限制缩放范围，避免太大或太小
-            if (ui_scale < 0.7f) ui_scale = 0.7f;
-            if (ui_scale > 1.5f) ui_scale = 1.5f;
-            
-            // 重要修复：先重置样式，再应用新缩放，避免缩放累积效应
-            ImGui::GetStyle() = style_original;  // 恢复原始样式
-            ImGui::GetStyle().ScaleAllSizes(ui_scale);  // 只应用一次缩放
-            
-            was_maximized = is_maximized;
-            window_state_changed = false;  // 重置窗口状态变化标志
+        // 改进的分辨率缩放计算
+        float resolution_scale = 1.0f;
+        if (display_width >= 3840 && display_height >= 2160) {
+            // 4K分辨率
+            resolution_scale = 2.0f;
+        } else if (display_width >= 2560 && display_height >= 1440) {
+            // 2K分辨率
+            resolution_scale = 1.5f;
+        } else if (display_width >= 1920 && display_height >= 1080) {
+            // 1080p分辨率
+            resolution_scale = 1.0f;
+        } else {
+            // 较低分辨率，适当缩小
+            resolution_scale = display_width / 1920.0f;
+            if (resolution_scale < 0.7f) resolution_scale = 0.7f;
         }
         
+        // 实时检测分辨率变化并更新UI缩放
+        bool resolution_changed = false;
+        if (last_display_width != display_width || 
+            last_display_height != display_height || 
+            last_resolution_scale != resolution_scale) {
+            
+            resolution_changed = true;
+            last_display_width = display_width;
+            last_display_height = display_height;
+            last_resolution_scale = resolution_scale;
+            
+            // 重新计算UI缩放
+            float width_ratio = display_width / base_width;
+            float height_ratio = display_height / base_height;
+            ui_scale = width_ratio < height_ratio ? width_ratio : height_ratio;
+            
+            // 结合分辨率缩放
+            ui_scale *= resolution_scale;
+            
+            if (ui_scale < 0.7f) ui_scale = 0.7f;
+            if (ui_scale > 3.0f) ui_scale = 3.0f;
+            
+            // 重置样式到原始状态，然后应用新的缩放
+            ImGui::GetStyle() = original_style;
+            ImGui::GetStyle().ScaleAllSizes(ui_scale);
+            
+            // 输出调试信息
+            printf("分辨率变化检测: %.0fx%.0f, 缩放比例: %.2f\n", 
+                   display_width, display_height, ui_scale);
+        }
+
         // 检测各窗口打开状态
         if (g_AppState.showPlotWindow && !plot_window_opened) {
-            plot_window_opened = true;  // 标记窗口刚刚打开
+            plot_window_opened = true;
         } else if (!g_AppState.showPlotWindow) {
-            plot_window_opened = false;  // 窗口关闭后重置标志
+            plot_window_opened = false;
         }
         
         if (g_AppState.show3DPlotWindow && !plot3d_window_opened) {
-            plot3d_window_opened = true;  // 标记窗口刚刚打开
+            plot3d_window_opened = true;
         } else if (!g_AppState.show3DPlotWindow) {
-            plot3d_window_opened = false;  // 窗口关闭后重置标志
+            plot3d_window_opened = false;
         }
 
         // 显示导航栏
@@ -280,38 +310,36 @@ int main(int, char**)
         if (show_demo_window)
             ImGui::ShowDemoWindow(&show_demo_window);
 
-        // 主菜单窗口 - 改进自适应布局
+        // 主菜单窗口 - 改进的分辨率自适应
         {
             // 获取菜单栏高度
             float menu_bar_height = ImGui::GetFrameHeight();
             
-            // 改进：使用比例布局而非固定大小
-            // 左侧面板占总宽度的20%，但最小不小于240像素，最大不超过350像素
-            float window_width = display_width * 0.20f;
-            
-            // 根据当前UI缩放调整最小和最大宽度限制
-            float min_width = 240.0f * ui_scale;
-            float max_width = 350.0f * ui_scale;
+            // 根据分辨率计算窗口大小
+            float window_width = display_width * 0.18f;
+            float min_width = 200.0f * resolution_scale;
+            float max_width = 400.0f * resolution_scale;
             
             window_width = (window_width < min_width) ? min_width : window_width;
             window_width = (window_width > max_width) ? max_width : window_width;
             float window_height = display_height - menu_bar_height;
             
-            // 设置窗口位置和大小 - 位置在菜单栏下方
-            ImGui::SetNextWindowPos(ImVec2(0, menu_bar_height), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(window_width, window_height), ImGuiCond_Always);
+            // 如果分辨率发生变化，重新设置窗口大小
+            ImGuiCond window_cond = resolution_changed ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+            ImGui::SetNextWindowPos(ImVec2(0, menu_bar_height), window_cond);
+            ImGui::SetNextWindowSize(ImVec2(window_width, window_height), window_cond);
             
-            // 设置窗口标志：不可移动、不可调整大小、不可折叠、无标题栏
-            ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoMove |
-                                          ImGuiWindowFlags_NoResize |
-                                          ImGuiWindowFlags_NoCollapse |
-                                          ImGuiWindowFlags_NoTitleBar;
-
-            // 启用垂直滚动条，确保内容超出时可以滚动查看
-            window_flags |= ImGuiWindowFlags_AlwaysVerticalScrollbar;
+            // 设置窗口标志
+            ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoCollapse |
+                                          ImGuiWindowFlags_NoTitleBar |
+                                          ImGuiWindowFlags_AlwaysVerticalScrollbar;
 
             ImGui::Begin(u8"Main", nullptr, window_flags);
-
+            
+            // 记录当前实际的窗口位置和大小
+            ImVec2 current_main_pos = ImGui::GetWindowPos();
+            ImVec2 current_main_size = ImGui::GetWindowSize();
+          
             // 添加更多内容以测试窗口是否能容纳所有文字
             ImGui::Text(u8"主控制面板");
             ImGui::Separator();
@@ -319,6 +347,7 @@ int main(int, char**)
             ImGui::Text(u8"这是一些有用的文本信息。");
             ImGui::TextWrapped(u8"当前显示分辨率: %.0f x %.0f", display_width, display_height);
             ImGui::TextWrapped(u8"缩放比例: %.2f (UI: %.2f)", font_scale, ui_scale);
+            ImGui::TextWrapped(u8"分辨率缩放: %.2f", resolution_scale);
             
             ImGui::Separator();
             
@@ -327,18 +356,19 @@ int main(int, char**)
             
             ImGui::Separator();
 
-            // 图表窗口按钮
-            if (ImGui::Button(u8"打开图表", ImVec2(-1, 0)))
+            // 图表窗口按钮 - 根据UI缩放调整按钮高度
+            float button_height = 30.0f * ui_scale;
+            if (ImGui::Button(u8"打开图表", ImVec2(-1, button_height)))
                 g_AppState.showPlotWindow = true;
 
-            if (ImGui::Button(u8"打开3D图表", ImVec2(-1, 0)))
+            if (ImGui::Button(u8"打开3D图表", ImVec2(-1, button_height)))
                 g_AppState.show3DPlotWindow = true;
             
             ImGui::Separator();
 
             // 显示窗口信息
             ImGui::TextWrapped(u8"窗口信息:");
-             // 重新获取当前窗口的实际尺寸，而不是使用计算值
+            // 重新获取当前窗口的实际尺寸，而不是使用计算值
             ImVec2 window_current_size = ImGui::GetWindowSize();
             ImVec2 window_content_size = ImGui::GetContentRegionAvail();
             
@@ -354,116 +384,116 @@ int main(int, char**)
             ImGui::End();
         }
 
-        // 日志窗口 - 改进自适应布局
+        // 日志窗口 - 改进的分辨率自适应
         if (show_log_window)
         {
-            // 获取菜单栏高度
             float menu_bar_height = ImGui::GetFrameHeight();
             
-            // 改进：使用比例布局，确保在不同分辨率下都有合适的大小
-            // 计算左侧面板宽度（与上面主菜单窗口一致）
-            float left_panel_width = display_width * 0.20f;
-            
-            // 根据当前UI缩放调整最小和最大宽度限制
-            float min_width = 240.0f * ui_scale;
-            float max_width = 350.0f * ui_scale;
+            // 根据分辨率计算布局
+            float left_panel_width = display_width * 0.18f;
+            float min_width = 200.0f * resolution_scale;
+            float max_width = 400.0f * resolution_scale;
             
             left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
             left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
-            // 日志窗口计算
             float log_pos_x = left_panel_width;
-            float log_pos_y = menu_bar_height + display_height * 0.6f; // 位于垂直60%的位置
+            float log_pos_y = menu_bar_height + display_height * 0.55f;
             float log_width = display_width - left_panel_width;
             float log_height = display_height - log_pos_y;
             
-            // 调整最小高度，确保日志窗口有足够的显示空间
-            float min_log_height = 180.0f * ui_scale;
-            if (log_height < min_log_height) log_height = min_log_height;
-            
-            // 确保日志窗口不会超出屏幕边界
-            if (log_pos_y + log_height > display_height) {
-                log_height = display_height - log_pos_y - 10; // 留10像素边距
+            float min_log_height = 150.0f * resolution_scale;
+            if (log_height < min_log_height) {
+                log_height = min_log_height;
+                log_pos_y = display_height - log_height - 10;
+                if (log_pos_y < menu_bar_height) {
+                    log_pos_y = menu_bar_height;
+                    log_height = display_height - menu_bar_height - 10;
+                }
             }
             
-            // 设置窗口位置和大小
-            ImGui::SetNextWindowPos(ImVec2(log_pos_x, log_pos_y), ImGuiCond_Always);
-            ImGui::SetNextWindowSize(ImVec2(log_width, log_height), ImGuiCond_Always);
+            // 如果分辨率发生变化，重新设置窗口大小
+            ImGuiCond window_cond = resolution_changed ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+            ImGui::SetNextWindowPos(ImVec2(log_pos_x, log_pos_y), window_cond);
+            ImGui::SetNextWindowSize(ImVec2(log_width, log_height), window_cond);
             
-            // 设置窗口标志：不可移动、不可调整大小、总是显示垂直滚动条
-            ImGuiWindowFlags log_window_flags = ImGuiWindowFlags_NoMove | 
-                                               ImGuiWindowFlags_NoResize | 
-                                               ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags log_window_flags = ImGuiWindowFlags_NoCollapse |
                                                ImGuiWindowFlags_AlwaysVerticalScrollbar;
             
-            // 创建日志窗口并显示其内容
             if (ImGui::Begin(u8"日志窗口", &show_log_window, log_window_flags)) {
                 ShowLogWindow(nullptr);
             }
             ImGui::End();
         }
 
-        // 如果图表窗口打开，也需要适应分辨率
+        // 图表窗口 - 改进的分辨率自适应
         if (g_AppState.showPlotWindow) {
             float menu_bar_height = ImGui::GetFrameHeight();
             
-            // 改进：图表窗口位置和大小计算
-            float left_panel_width = display_width * 0.20f;
-            
-            // 根据当前UI缩放调整最小和最大宽度限制
-            float min_width = 240.0f * ui_scale;
-            float max_width = 350.0f * ui_scale;
+            // 根据分辨率计算默认位置和大小
+            float left_panel_width = display_width * 0.18f;
+            float min_width = 200.0f * resolution_scale;
+            float max_width = 400.0f * resolution_scale;
             
             left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
             left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
             float plot_pos_x = left_panel_width;
             float plot_pos_y = menu_bar_height;
-            float plot_width = display_width - left_panel_width;
-            float plot_height = display_height * 0.6f - menu_bar_height;
+            float plot_width = (display_width - left_panel_width) * 0.65f;
+            float plot_height = display_height * 0.45f - menu_bar_height;
             
-            // 修复：窗口刚打开或窗口状态变化时，总是使用当前计算的位置和大小
-            ImGuiCond position_cond = plot_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
-            ImGuiCond size_cond = plot_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            float min_plot_width = 350.0f * resolution_scale;
+            float min_plot_height = 250.0f * resolution_scale;
+            plot_width = (plot_width < min_plot_width) ? min_plot_width : plot_width;
+            plot_height = (plot_height < min_plot_height) ? min_plot_height : plot_height;
             
-            ImGui::SetNextWindowPos(ImVec2(plot_pos_x, plot_pos_y), position_cond);
-            ImGui::SetNextWindowSize(ImVec2(plot_width, plot_height), size_cond);
+            // 根据窗口状态和分辨率变化决定设置条件
+            ImGuiCond window_cond = ImGuiCond_Appearing;
+            if (resolution_changed) {
+                window_cond = ImGuiCond_Always;
+            }
             
-            // 窗口已打开，重置标志
-            plot_window_opened = false;
+            if (plot_window_opened || resolution_changed) {
+                ImGui::SetNextWindowPos(ImVec2(plot_pos_x, plot_pos_y), window_cond);
+                ImGui::SetNextWindowSize(ImVec2(plot_width, plot_height), window_cond);
+            }
             
             ShowPlotWindow(&g_AppState.showPlotWindow);
         }
 
-        // 如果3D图表窗口打开，也需要适应分辨率
+        // 3D图表窗口 - 改进的分辨率自适应
         if (g_AppState.show3DPlotWindow) {
             float menu_bar_height = ImGui::GetFrameHeight();
             
-            // 改进：3D图表窗口计算方式
-            float left_panel_width = display_width * 0.20f;
-            
-            // 根据当前UI缩放调整最小和最大宽度限制
-            float min_width = 240.0f * ui_scale;
-            float max_width = 350.0f * ui_scale;
+            // 根据分辨率计算默认位置和大小
+            float left_panel_width = display_width * 0.18f;
+            float min_width = 200.0f * resolution_scale;
+            float max_width = 400.0f * resolution_scale;
             
             left_panel_width = (left_panel_width < min_width) ? min_width : left_panel_width;
             left_panel_width = (left_panel_width > max_width) ? max_width : left_panel_width;
             
-            // 初始窗口位置调整，比例计算
-            float plot3d_pos_x = (display_width - left_panel_width) * 0.1f + left_panel_width;
-            float plot3d_pos_y = menu_bar_height + display_height * 0.1f;
-            float plot3d_width = display_width * 0.7f;
-            float plot3d_height = display_height * 0.7f;
+            float plot3d_pos_x = (display_width - left_panel_width) * 0.12f + left_panel_width;
+            float plot3d_pos_y = menu_bar_height + display_height * 0.08f;
+            float plot3d_width = display_width * 0.45f;
+            float plot3d_height = display_height * 0.55f;
             
-            // 修复：窗口刚打开或窗口状态变化时，总是使用当前计算的位置和大小
-            ImGuiCond position_cond = plot3d_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
-            ImGuiCond size_cond = plot3d_window_opened ? ImGuiCond_Always : ImGuiCond_Always;
+            float min_plot3d_width = 400.0f * resolution_scale;
+            float min_plot3d_height = 300.0f * resolution_scale;
+            plot3d_width = (plot3d_width < min_plot3d_width) ? min_plot3d_width : plot3d_width;
+            plot3d_height = (plot3d_height < min_plot3d_height) ? min_plot3d_height : plot3d_height;
             
-            ImGui::SetNextWindowPos(ImVec2(plot3d_pos_x, plot3d_pos_y), position_cond);
-            ImGui::SetNextWindowSize(ImVec2(plot3d_width, plot3d_height), size_cond);
+            // 根据窗口状态和分辨率变化决定设置条件
+            ImGuiCond window_cond = ImGuiCond_Appearing;
+            if (resolution_changed) {
+                window_cond = ImGuiCond_Always;
+            }
             
-            // 窗口已打开，重置标志
-            plot3d_window_opened = false;
+            if (plot3d_window_opened || resolution_changed) {
+                ImGui::SetNextWindowPos(ImVec2(plot3d_pos_x, plot3d_pos_y), window_cond);
+                ImGui::SetNextWindowSize(ImVec2(plot3d_width, plot3d_height), window_cond);
+            }
             
             DemoMeshPlots(&g_AppState.show3DPlotWindow);
         }
@@ -479,7 +509,7 @@ int main(int, char**)
         HRESULT hr = g_pSwapChain->Present(1, 0);   // Present with vsync
         g_SwapChainOccluded = (hr == DXGI_STATUS_OCCLUDED);
     }
-
+    
     // Cleanup
     CleanupImPlot();
     ImGui_ImplDX11_Shutdown();
